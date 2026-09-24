@@ -327,18 +327,28 @@ public class ScreenMediaRecorder {
         int maxHeight = Math.min(vc.getSupportedHeights().getUpper(),
                 encoderVc.getSupportedHeights().getUpper());
 
+        // A recording must be accepted by both components. In particular, do not rely only on
+        // independent width/height bounds: C2 capabilities can advertise a combination that the
+        // vendor codec cannot actually initialize.
+        int widthAlignment = leastCommonMultiple(vc.getWidthAlignment(),
+                encoderVc.getWidthAlignment());
+        int heightAlignment = leastCommonMultiple(vc.getHeightAlignment(),
+                encoderVc.getHeightAlignment());
+
         int screenWidthAligned = screenWidth;
-        if (screenWidthAligned % vc.getWidthAlignment() != 0) {
-            screenWidthAligned -= (screenWidthAligned % vc.getWidthAlignment());
+        if (screenWidthAligned % widthAlignment != 0) {
+            screenWidthAligned -= (screenWidthAligned % widthAlignment);
         }
         int screenHeightAligned = screenHeight;
-        if (screenHeightAligned % vc.getHeightAlignment() != 0) {
-            screenHeightAligned -= (screenHeightAligned % vc.getHeightAlignment());
+        if (screenHeightAligned % heightAlignment != 0) {
+            screenHeightAligned -= (screenHeightAligned % heightAlignment);
         }
 
         int width;
         int height;
-        if (screenWidthAligned <= maxWidth && screenHeightAligned <= maxHeight) {
+        if (screenWidthAligned <= maxWidth && screenHeightAligned <= maxHeight
+                && vc.isSizeSupported(screenWidthAligned, screenHeightAligned)
+                && encoderVc.isSizeSupported(screenWidthAligned, screenHeightAligned)) {
             // Desired size is supported, now get the rate
             width = screenWidthAligned;
             height = screenHeightAligned;
@@ -349,16 +359,17 @@ public class ScreenMediaRecorder {
 
             width = (int) (screenWidth * scale);
             height = (int) (screenHeight * scale);
-            if (width % vc.getWidthAlignment() != 0) {
-                width -= (width % vc.getWidthAlignment());
+            if (width % widthAlignment != 0) {
+                width -= (width % widthAlignment);
             }
-            if (height % vc.getHeightAlignment() != 0) {
-                height -= (height % vc.getHeightAlignment());
+            if (height % heightAlignment != 0) {
+                height -= (height % heightAlignment);
             }
         }
 
         // Find max supported rate for size
-        int maxRate = getSupportedFrameRateFor(vc, width, height);
+        int maxRate = Math.min(getSupportedFrameRateFor(vc, width, height),
+                getSupportedFrameRateFor(encoderVc, width, height));
         if (maxRate < refreshRate) {
             refreshRate = maxRate;
         }
@@ -522,6 +533,19 @@ public class ScreenMediaRecorder {
         if (mTempAudioFile != null) {
             mTempAudioFile.delete();
         }
+    }
+
+    private static int leastCommonMultiple(int first, int second) {
+        return first / greatestCommonDivisor(first, second) * second;
+    }
+
+    private static int greatestCommonDivisor(int first, int second) {
+        while (second != 0) {
+            int remainder = first % second;
+            first = second;
+            second = remainder;
+        }
+        return first;
     }
 
     /**
